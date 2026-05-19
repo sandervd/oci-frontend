@@ -214,6 +214,15 @@ legend {
   gap: 18px;
 }
 
+.load-more {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #52616f;
+  font-size: 14px;
+}
+
 .model-card {
   min-height: 250px;
   display: flex;

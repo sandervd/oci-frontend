@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Database, Download, Filter, Search, X } from "lucide-react";
 import "./styles.css";
@@ -33,25 +33,89 @@ type DataModelDetail = DataModelSummary & { latest_digest: string | null; versio
 type SearchResponse = { items: DataModelSummary[]; total: number; licenses: FacetValue[]; domains: FacetValue[] };
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+const pageSize = 48;
 
 function App() {
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<SearchResponse | null>(null);
   const [selected, setSelected] = useState<DataModelDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
   const selectedId = params.get("model");
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const hasMore = items.length < total;
+
+  const searchKey = useMemo(() => {
+    const query = new URLSearchParams(params);
+    query.delete("model");
+    query.delete("limit");
+    query.delete("offset");
+    query.sort();
+    return query.toString();
+  }, [params]);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    const query = new URLSearchParams(params);
-    query.delete("model");
+    const query = new URLSearchParams(searchKey);
+    query.set("limit", String(pageSize));
+    query.set("offset", "0");
     fetch(`${apiBase}/api/datamodels?${query.toString()}`, { signal: controller.signal })
       .then((response) => response.json())
       .then(setData)
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [params]);
+  }, [searchKey]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasMore || loading || loadingMore) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting || loadingMoreRef.current) {
+          return;
+        }
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+        const query = new URLSearchParams(searchKey);
+        query.set("limit", String(pageSize));
+        query.set("offset", String(items.length));
+        fetch(`${apiBase}/api/datamodels?${query.toString()}`, { signal: controller.signal })
+          .then((response) => response.json())
+          .then((nextPage: SearchResponse) => {
+            setData((current) => {
+              if (!current) {
+                return nextPage;
+              }
+              const knownIds = new Set(current.items.map((item) => item.id));
+              const nextItems = nextPage.items.filter((item) => !knownIds.has(item.id));
+              return {
+                ...nextPage,
+                items: [...current.items, ...nextItems],
+              };
+            });
+          })
+          .finally(() => {
+            loadingMoreRef.current = false;
+            setLoadingMore(false);
+          });
+      },
+      { rootMargin: "720px 0px" },
+    );
+
+    observer.observe(target);
+    return () => {
+      controller.abort();
+      observer.disconnect();
+    };
+  }, [hasMore, items.length, loading, searchKey]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -129,10 +193,10 @@ function App() {
         <section className="results" aria-busy={loading}>
           <div className="result-head">
             <h2>Data models</h2>
-            {loading && <span>Refreshing</span>}
+            <span>{loading ? "Refreshing" : `Showing ${items.length} of ${total}`}</span>
           </div>
           <div className="grid">
-            {(data?.items ?? []).map((item) => (
+            {items.map((item) => (
               <button
                 className="model-card"
                 key={item.id}
@@ -156,6 +220,10 @@ function App() {
                 </div>
               </button>
             ))}
+          </div>
+          <div className="load-more" ref={loadMoreRef}>
+            {loadingMore && <span>Loading more data models</span>}
+            {!loading && !hasMore && total > 0 && <span>All data models loaded</span>}
           </div>
         </section>
       </section>
