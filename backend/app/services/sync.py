@@ -184,13 +184,17 @@ class SyncService:
             db.flush()
 
             version.layers.clear()
+            db.flush()
+            seen_layer_digests = set()
             for layer in payload["layers"]:
-                if not layer.get("digest"):
+                digest = layer.get("digest")
+                if not digest or digest in seen_layer_digests:
                     continue
+                seen_layer_digests.add(digest)
                 db.add(
                     ModelLayer(
                         version=version,
-                        digest=layer["digest"],
+                        digest=digest,
                         media_type=layer.get("mediaType") or "application/octet-stream",
                         size=layer.get("size"),
                         annotations=layer.get("annotations") or {},
