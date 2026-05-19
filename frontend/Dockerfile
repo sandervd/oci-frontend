@@ -1,9 +1,16 @@
 FROM node:22-bookworm-slim
 
 WORKDIR /app
+ARG VITE_BASE_PATH=/
+ARG VITE_API_BASE_URL=
+ARG VITE_ALLOWED_HOSTS=localhost,127.0.0.1
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_ALLOWED_HOSTS=$VITE_ALLOWED_HOSTS
 COPY package.json ./
 RUN npm install
 COPY . .
+RUN npm run build
 
 EXPOSE 5173
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "preview", "--", "--port", "5173"]

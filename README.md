@@ -35,6 +35,8 @@ VITE_ALLOWED_HOSTS=localhost,127.0.0.1,essentialcomplexity.eu
 
 Proxy `/op-registry/api` to the backend before proxying `/op-registry` to the frontend.
 
+The frontend container serves a production build with `vite preview`, not the Vite development server. Rebuild the image after changing `VITE_BASE_PATH` or `VITE_API_BASE_URL` because those values are baked into the static assets.
+
 ## Allowlist
 
 `OCI_ALLOWLIST` is comma-separated and uses gitignore-like glob patterns. The default `*` includes every repository discoverable through the standard OCI catalog endpoint.

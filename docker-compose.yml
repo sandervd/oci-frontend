@@ -11,6 +11,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_BASE_URL: /op-registry
+        VITE_BASE_PATH: /op-registry/
+        VITE_ALLOWED_HOSTS: localhost,127.0.0.1,essentialcomplexity.eu
     environment:
       VITE_API_BASE_URL: /op-registry
       VITE_BASE_PATH: /op-registry/
