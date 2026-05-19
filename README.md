@@ -23,6 +23,17 @@ The frontend runs at `http://localhost:5173` and the API at `http://localhost:80
 
 Harbor robot usernames can contain `$`. Keep them as-is in `backend/.env`, for example `OCI_USERNAME=robot$semantic-registry`; the file is mounted into the backend container and read by the Python app directly.
 
+## Reverse proxy under a path
+
+Set the Vite base path when serving the frontend below a subpath:
+
+```dotenv
+VITE_BASE_PATH=/op-registry/
+VITE_API_BASE_URL=/op-registry
+```
+
+Proxy `/op-registry/api` to the backend before proxying `/op-registry` to the frontend.
+
 ## Allowlist
 
 `OCI_ALLOWLIST` is comma-separated and uses gitignore-like glob patterns. The default `*` includes every repository discoverable through the standard OCI catalog endpoint.
