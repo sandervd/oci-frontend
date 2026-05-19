@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "annotations": {
+    "org.opencontainers.image.title": "Address Data Model",
+    "org.opencontainers.image.description": "A reusable model for address exchange.",
+    "org.opencontainers.image.created": "2026-02-10T12:00:00Z",
+    "org.opencontainers.image.version": "1.2.0",
+    "org.opencontainers.image.licenses": "CC-BY-4.0",
+    "eu.europa.publications.datamodel.domain": "[\"location\", \"public-administration\"]",
+    "eu.europa.publications.datamodel.adms": "{\"@context\":\"https://www.w3.org/ns/dcat.jsonld\",\"type\":\"Asset\"}"
+  },
+  "config": {
+    "mediaType": "application/vnd.oci.image.config.v1+json",
+    "digest": "sha256:config",
+    "size": 120
+  },
+  "layers": [
+    {
+      "mediaType": "application/vnd.eu.publications.datamodel.owl",
+      "digest": "sha256:owl",
+      "size": 2048
+    },
+    {
+      "mediaType": "application/vnd.eu.publications.datamodel.shacl",
+      "digest": "sha256:shacl",
+      "size": 4096
+    }
+  ]
+}
