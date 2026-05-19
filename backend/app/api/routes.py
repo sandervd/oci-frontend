@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
-from app.models.datamodel import DataModel, ModelLayer, ModelVersion
+from app.models.datamodel import DataModel, ModelLayer, ModelVersion, SyncRepositoryState, SyncRun
 from app.schemas.datamodel import DataModelDetail, FacetValue, SearchResponse
 from app.services.oci_client import OCIClient
 from app.services.sync import SyncService
@@ -131,10 +131,36 @@ async def debug_status(
 
 
 @router.get("/admin/sync/status")
-def sync_status(x_admin_token: str | None = Header(default=None), settings: Settings = Depends(get_settings)) -> dict:
+def sync_status(
+    x_admin_token: str | None = Header(default=None),
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
+) -> dict:
     if x_admin_token != settings.admin_token:
         raise HTTPException(status_code=401, detail="Invalid admin token")
-    return sync_state.as_dict()
+    latest_run = db.scalar(select(SyncRun).order_by(SyncRun.started_at.desc(), SyncRun.id.desc()))
+    result = sync_state.as_dict()
+    if latest_run is None:
+        result["persisted_run"] = None
+        return result
+
+    current_repository = db.scalar(
+        select(SyncRepositoryState.repository)
+        .where(SyncRepositoryState.run_id == latest_run.id, SyncRepositoryState.status == "syncing")
+        .order_by(SyncRepositoryState.started_at.desc())
+    )
+    result["persisted_run"] = {
+        "id": latest_run.id,
+        "status": latest_run.status,
+        "started_at": latest_run.started_at,
+        "finished_at": latest_run.finished_at,
+        "total_repositories": latest_run.total_repositories,
+        "synced_repositories": latest_run.synced_repositories,
+        "failed_repositories": latest_run.failed_repositories,
+        "current_repository": current_repository,
+        "error": latest_run.error,
+    }
+    return result
 
 
 @router.get("/datamodels/{datamodel_id}/layers/{digest:path}/download")
