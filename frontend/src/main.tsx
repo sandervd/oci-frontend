@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import DOMPurify from "dompurify";
 import { Calendar, Database, Download, Filter, Search, X } from "lucide-react";
 import "./styles.css";
 
@@ -204,7 +205,7 @@ function App() {
               >
                 <span className="repository">{item.repository}</span>
                 <h3>{item.title}</h3>
-                <p>{item.description || "No description available."}</p>
+                <p className="card-description">{plainTextDescription(item.description) || "No description available."}</p>
                 <div className="chips">
                   {item.domains.map((domain) => (
                     <span key={domain}>{domain}</span>
@@ -265,6 +266,8 @@ type FacetProps = {
 };
 
 function DetailPanel({ model, onClose }: { model: DataModelDetail; onClose: () => void }) {
+  const safeDescription = sanitizeDescriptionHtml(model.description);
+
   return (
     <aside className="detail">
       <div className="detail-head">
@@ -276,7 +279,11 @@ function DetailPanel({ model, onClose }: { model: DataModelDetail; onClose: () =
           <X size={18} />
         </button>
       </div>
-      <p>{model.description}</p>
+      {safeDescription ? (
+        <div className="detail-description" dangerouslySetInnerHTML={{ __html: safeDescription }} />
+      ) : (
+        <p className="detail-description empty-description">No description available.</p>
+      )}
       <div className="version-list">
         {model.versions.map((version) => (
           <details key={version.tag} open={version.tag === model.latest_tag}>
@@ -362,6 +369,44 @@ function formatDate(value: string | null) {
 function formatBytes(value: number | null) {
   if (!value) return "";
   return new Intl.NumberFormat("en", { notation: "compact", style: "unit", unit: "byte", unitDisplay: "narrow" }).format(value);
+}
+
+function plainTextDescription(value: string) {
+  if (!value) {
+    return "";
+  }
+  const withoutTags = value.replace(/<[^>]*>/g, " ");
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = withoutTags;
+  return textarea.value.replace(/\s+/g, " ").trim();
+}
+
+function sanitizeDescriptionHtml(value: string) {
+  if (!value) {
+    return "";
+  }
+  return DOMPurify.sanitize(value, {
+    ALLOWED_TAGS: [
+      "a",
+      "abbr",
+      "b",
+      "br",
+      "code",
+      "em",
+      "i",
+      "li",
+      "ol",
+      "p",
+      "pre",
+      "span",
+      "strong",
+      "sub",
+      "sup",
+      "ul",
+    ],
+    ALLOWED_ATTR: ["href", "title", "lang"],
+    ALLOW_DATA_ATTR: false,
+  });
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

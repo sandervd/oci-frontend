@@ -262,6 +262,13 @@ legend {
   flex: 1;
 }
 
+.card-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -316,10 +323,41 @@ legend {
   overflow-wrap: anywhere;
 }
 
-.detail > p {
+.detail-description {
   color: #52616f;
   line-height: 1.5;
   margin-bottom: 20px;
+}
+
+.detail-description p,
+.detail-description ul,
+.detail-description ol,
+.detail-description pre {
+  margin: 0 0 12px;
+}
+
+.detail-description ul,
+.detail-description ol {
+  padding-left: 22px;
+}
+
+.detail-description a {
+  color: #034ea2;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.detail-description code,
+.detail-description pre {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.detail-description pre {
+  white-space: pre-wrap;
+}
+
+.empty-description {
+  color: #6b7785;
 }
 
 .version-list {
