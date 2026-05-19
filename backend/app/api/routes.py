@@ -149,6 +149,12 @@ def sync_status(
         .where(SyncRepositoryState.run_id == latest_run.id, SyncRepositoryState.status == "syncing")
         .order_by(SyncRepositoryState.started_at.desc())
     )
+    skipped_repositories = db.scalar(
+        select(func.count()).select_from(SyncRepositoryState).where(
+            SyncRepositoryState.run_id == latest_run.id,
+            SyncRepositoryState.status == "skipped",
+        )
+    ) or 0
     result["persisted_run"] = {
         "id": latest_run.id,
         "status": latest_run.status,
@@ -157,6 +163,7 @@ def sync_status(
         "total_repositories": latest_run.total_repositories,
         "synced_repositories": latest_run.synced_repositories,
         "failed_repositories": latest_run.failed_repositories,
+        "skipped_repositories": skipped_repositories,
         "current_repository": current_repository,
         "error": latest_run.error,
     }

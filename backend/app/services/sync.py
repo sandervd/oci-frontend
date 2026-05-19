@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 
 from sqlalchemy import func, select
@@ -39,6 +39,26 @@ class SyncService:
             sync_state.skipped_repositories = len(allowed_repositories) - len(states)
             for index, state in enumerate(states, start=1):
                 sync_state.current_repository = state.repository
+                if self._was_recently_synced(db, state.repository):
+                    logger.info(
+                        "Skipping repository %s/%s for run %s because it was synced within %s minutes: %s",
+                        run.synced_repositories + run.failed_repositories + index,
+                        len(allowed_repositories),
+                        run.id,
+                        self.settings.sync_interval_minutes,
+                        state.repository,
+                    )
+                    state.status = "skipped"
+                    state.started_at = datetime.now(timezone.utc)
+                    state.finished_at = state.started_at
+                    state.error = None
+                    db.commit()
+                    self._refresh_run_counts(db, run)
+                    sync_state.synced_repositories = run.synced_repositories
+                    sync_state.failed_repositories = run.failed_repositories
+                    sync_state.skipped_repositories += 1
+                    continue
+
                 logger.info(
                     "Syncing repository %s/%s for run %s: %s",
                     run.synced_repositories + run.failed_repositories + index,
@@ -91,6 +111,7 @@ class SyncService:
                 "repositories": len(allowed_repositories),
                 "synced_repositories": run.synced_repositories,
                 "failed_repositories": run.failed_repositories,
+                "skipped_repositories": self._skipped_count(db, run.id),
                 "synced_at": datetime.now(timezone.utc).isoformat(),
             }
             sync_state.finish()
@@ -239,7 +260,7 @@ class SyncService:
         run.synced_repositories = db.scalar(
             select(func.count()).select_from(SyncRepositoryState).where(
                 SyncRepositoryState.run_id == run.id,
-                SyncRepositoryState.status == "completed",
+                SyncRepositoryState.status.in_(["completed", "skipped"]),
             )
         ) or 0
         run.failed_repositories = db.scalar(
@@ -249,3 +270,21 @@ class SyncService:
             )
         ) or 0
         db.commit()
+
+    def _skipped_count(self, db: Session, run_id: int) -> int:
+        return db.scalar(
+            select(func.count()).select_from(SyncRepositoryState).where(
+                SyncRepositoryState.run_id == run_id,
+                SyncRepositoryState.status == "skipped",
+            )
+        ) or 0
+
+    def _was_recently_synced(self, db: Session, repository: str) -> bool:
+        datamodel = db.scalar(select(DataModel).where(DataModel.repository == repository))
+        if datamodel is None or datamodel.synced_at is None:
+            return False
+        synced_at = datamodel.synced_at
+        if synced_at.tzinfo is None:
+            synced_at = synced_at.replace(tzinfo=timezone.utc)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.settings.sync_interval_minutes)
+        return synced_at >= cutoff
