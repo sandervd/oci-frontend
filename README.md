@@ -30,6 +30,7 @@ Set the Vite base path when serving the frontend below a subpath:
 ```dotenv
 VITE_BASE_PATH=/op-registry/
 VITE_API_BASE_URL=/op-registry
+VITE_ALLOWED_HOSTS=localhost,127.0.0.1,essentialcomplexity.eu
 ```
 
 Proxy `/op-registry/api` to the backend before proxying `/op-registry` to the frontend.
