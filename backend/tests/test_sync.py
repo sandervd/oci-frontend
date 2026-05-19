@@ -8,10 +8,14 @@ from app.services.sync import SyncService
 
 
 class FakeClient:
+    def __init__(self):
+        self.manifest_calls = 0
+
     async def tags(self, repository):
         return ["1.0.0"]
 
     async def manifest(self, repository, tag):
+        self.manifest_calls += 1
         return (
             {
                 "schemaVersion": 2,
@@ -74,3 +78,23 @@ async def test_sync_repository_can_replace_existing_layers_with_same_digest(db_s
     layers = db_session.scalars(select(ModelLayer).where(ModelLayer.version_id == version.id)).all()
 
     assert len(layers) == 1
+
+
+@pytest.mark.anyio
+async def test_sync_repository_skips_oci_manifest_when_harbor_digest_is_unchanged(db_session):
+    service = SyncService.__new__(SyncService)
+    service.client = FakeClient()
+
+    await service._sync_repository(db_session, "semantic/duplicate-layer-model")
+    db_session.commit()
+
+    from app.services.harbor_client import RepositoryDiscovery
+
+    discovery = RepositoryDiscovery(
+        repository="semantic/duplicate-layer-model",
+        tag_digests={"1.0.0": "sha256:manifest"},
+    )
+    await service._sync_repository(db_session, "semantic/duplicate-layer-model", discovery)
+    db_session.commit()
+
+    assert service.client.manifest_calls == 1

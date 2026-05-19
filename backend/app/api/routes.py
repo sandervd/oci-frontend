@@ -11,6 +11,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models.datamodel import DataModel, ModelLayer, ModelVersion, SyncRepositoryState, SyncRun
 from app.schemas.datamodel import DataModelDetail, FacetValue, SearchResponse
+from app.services.harbor_client import HarborClient
 from app.services.oci_client import OCIClient
 from app.services.sync import SyncService
 from app.services.sync_lock import sync_lock
@@ -127,6 +128,11 @@ async def debug_status(
         }
     except httpx.RequestError as exc:
         result["registry_probe"] = {"error": str(exc)}
+    result["harbor_api_available"] = await HarborClient(
+        settings.registry_base_url,
+        settings.oci_username,
+        settings.oci_password,
+    ).is_available()
     return result
 
 

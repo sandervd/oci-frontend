@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import Settings
 from app.models.datamodel import DataModel, ModelLayer, ModelVersion, SyncRepositoryState, SyncRun
 from app.services.allowlist import is_allowed
+from app.services.harbor_client import HarborClient, RepositoryDiscovery
 from app.services.metadata import choose_latest, summarize
 from app.services.oci_client import OCIClient
 from app.services.sync_state import sync_state
@@ -19,30 +20,40 @@ class SyncService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.client = OCIClient(settings.registry_base_url, settings.oci_username, settings.oci_password)
+        self.harbor_client = HarborClient(settings.registry_base_url, settings.oci_username, settings.oci_password)
+        self.harbor_available = False
 
     async def sync(self, db: Session) -> dict:
         run = self._get_or_create_run(db)
         sync_state.start(run.id)
         logger.info("Starting OCI registry sync run %s", run.id)
-        repositories = await self.client.catalog()
+        discoveries, discovery_source = await self._discover_repositories()
+        repositories = [discovery.repository for discovery in discoveries]
+        discovery_by_repository = {discovery.repository: discovery for discovery in discoveries}
         allowed_repositories = [repo for repo in repositories if is_allowed(repo, self.settings.allowlist_patterns)]
         self._ensure_repository_states(db, run, allowed_repositories)
         sync_state.phase = "syncing_repositories"
         sync_state.total_repositories = len(allowed_repositories)
         sync_state.synced_repositories = run.synced_repositories
         sync_state.failed_repositories = run.failed_repositories
-        logger.info("Discovered %s repositories, %s allowed", len(repositories), len(allowed_repositories))
+        logger.info(
+            "Discovered %s repositories with %s, %s allowed",
+            len(repositories),
+            discovery_source,
+            len(allowed_repositories),
+        )
         seen = set(allowed_repositories)
 
         try:
             states = self._repository_states_to_process(db, run.id)
             sync_state.skipped_repositories = len(allowed_repositories) - len(states)
-            for index, state in enumerate(states, start=1):
+            for state in states:
                 sync_state.current_repository = state.repository
+                progress_position = run.synced_repositories + run.failed_repositories + 1
                 if self._was_recently_synced(db, state.repository):
                     logger.info(
                         "Skipping repository %s/%s for run %s because it was synced within %s minutes: %s",
-                        run.synced_repositories + run.failed_repositories + index,
+                        progress_position,
                         len(allowed_repositories),
                         run.id,
                         self.settings.sync_interval_minutes,
@@ -61,7 +72,7 @@ class SyncService:
 
                 logger.info(
                     "Syncing repository %s/%s for run %s: %s",
-                    run.synced_repositories + run.failed_repositories + index,
+                    progress_position,
                     len(allowed_repositories),
                     run.id,
                     state.repository,
@@ -73,7 +84,7 @@ class SyncService:
                 db.commit()
 
                 try:
-                    await self._sync_repository(db, state.repository)
+                    await self._sync_repository(db, state.repository, discovery_by_repository.get(state.repository))
                     state.status = "completed"
                     state.finished_at = datetime.now(timezone.utc)
                     state.error = None
@@ -128,8 +139,18 @@ class SyncService:
             logger.exception("OCI registry sync failed")
             raise
 
-    async def _sync_repository(self, db: Session, repository: str) -> None:
-        tags = await self.client.tags(repository)
+    async def _sync_repository(self, db: Session, repository: str, discovery: RepositoryDiscovery | None = None) -> None:
+        if getattr(self, "harbor_available", False):
+            try:
+                discovery = await self.harbor_client.discover_repository(repository)
+            except Exception:
+                logger.exception("Harbor artifact discovery failed for %s; falling back to OCI tag discovery", repository)
+        if discovery is None or not discovery.tag_digests:
+            tags = await self.client.tags(repository)
+            tag_digests: dict[str, str] = {}
+        else:
+            tags = discovery.tags
+            tag_digests = discovery.tag_digests
         version_payloads = []
         datamodel = db.scalar(
             select(DataModel)
@@ -144,9 +165,9 @@ class SyncService:
         existing_versions = {version.tag: version for version in datamodel.versions}
         seen_tags = set(tags)
         for tag in tags:
-            manifest, digest = await self.client.manifest(repository, tag)
+            digest = tag_digests.get(tag)
             existing = existing_versions.get(tag)
-            if existing is not None and existing.digest == digest:
+            if digest and existing is not None and existing.digest == digest:
                 version_payloads.append(
                     {
                         "tag": existing.tag,
@@ -161,6 +182,8 @@ class SyncService:
                 )
                 continue
 
+            manifest, manifest_digest = await self.client.manifest(repository, tag)
+            digest = digest or manifest_digest
             config_blob = None
             config = manifest.get("config") or {}
             if config.get("digest"):
@@ -215,6 +238,16 @@ class SyncService:
             datamodel.latest_digest = latest["digest"]
             datamodel.updated_at = latest["release_date"]
         db.flush()
+
+    async def _discover_repositories(self) -> tuple[list[RepositoryDiscovery], str]:
+        if await self.harbor_client.is_available():
+            self.harbor_available = True
+            repositories = await self.client.catalog()
+            return [RepositoryDiscovery(repository=repository) for repository in repositories], "oci-catalog+harbor-artifacts"
+
+        self.harbor_available = False
+        repositories = await self.client.catalog()
+        return [RepositoryDiscovery(repository=repository) for repository in repositories], "oci"
 
     def _get_or_create_run(self, db: Session) -> SyncRun:
         run = db.scalar(
