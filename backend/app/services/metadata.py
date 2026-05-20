@@ -99,5 +99,11 @@ def choose_latest(versions: list[dict]) -> dict | None:
 
     dated = [version for version in versions if version.get("release_date")]
     if dated:
-        return sorted(dated, key=lambda version: version["release_date"])[-1]
+        return sorted(dated, key=lambda version: normalize_datetime(version["release_date"]))[-1]
     return sorted(versions, key=lambda version: version["tag"])[-1]
+
+
+def normalize_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value

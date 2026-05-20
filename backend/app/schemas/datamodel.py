@@ -55,5 +55,6 @@ class FacetValue(BaseModel):
 class SearchResponse(BaseModel):
     items: list[DataModelSummary]
     total: int
+    projects: list[FacetValue]
     licenses: list[FacetValue]
     domains: list[FacetValue]

@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api")
 @router.get("/datamodels", response_model=SearchResponse)
 def search_datamodels(
     q: str | None = None,
+    project: list[str] = Query(default=[]),
     license: list[str] = Query(default=[]),
     domain: list[str] = Query(default=[]),
     released_from: date | None = None,
@@ -35,6 +36,8 @@ def search_datamodels(
     if q:
         needle = f"%{q}%"
         statement = statement.where(or_(DataModel.title.ilike(needle), DataModel.description.ilike(needle)))
+    if project:
+        statement = statement.where(or_(*[DataModel.repository.like(f"{value}/%") for value in project]))
     if license:
         statement = statement.where(DataModel.license.in_(license))
     for value in domain:
@@ -55,9 +58,10 @@ def search_datamodels(
     items = db.scalars(statement.order_by(*order_by).limit(limit).offset(offset)).all()
 
     all_models = db.scalars(select(DataModel)).all()
+    projects = _facet_counts([_repository_project(item.repository) for item in all_models if _repository_project(item.repository)])
     licenses = _facet_counts([item.license for item in all_models if item.license])
     domains = _facet_counts([domain for item in all_models for domain in item.domains])
-    return SearchResponse(items=items, total=total, licenses=licenses, domains=domains)
+    return SearchResponse(items=items, total=total, projects=projects, licenses=licenses, domains=domains)
 
 
 @router.get("/datamodels/{datamodel_id}", response_model=DataModelDetail)
@@ -203,6 +207,10 @@ def _facet_counts(values: list[str]) -> list[FacetValue]:
     for value in values:
         counts[value] = counts.get(value, 0) + 1
     return [FacetValue(value=value, count=count) for value, count in sorted(counts.items())]
+
+
+def _repository_project(repository: str) -> str:
+    return repository.split("/", 1)[0]
 
 
 def _auth(settings: Settings) -> tuple[str, str] | None:

@@ -31,7 +31,13 @@ type Version = {
   layers: Layer[];
 };
 type DataModelDetail = DataModelSummary & { latest_digest: string | null; versions: Version[] };
-type SearchResponse = { items: DataModelSummary[]; total: number; licenses: FacetValue[]; domains: FacetValue[] };
+type SearchResponse = {
+  items: DataModelSummary[];
+  total: number;
+  projects: FacetValue[];
+  licenses: FacetValue[];
+  domains: FacetValue[];
+};
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 const pageSize = 48;
@@ -131,7 +137,7 @@ function App() {
   }, [selectedId]);
 
   const activeFilters = useMemo(() => {
-    return ["q", "license", "domain", "released_from", "released_to"].filter((key) => params.has(key)).length;
+    return ["q", "project", "license", "domain", "released_from", "released_to"].filter((key) => params.has(key)).length;
   }, [params]);
 
   return (
@@ -169,6 +175,7 @@ function App() {
               onChange={(event) => updateParam(params, setParams, "q", event.target.value)}
             />
           </label>
+          <Facet title="Project" name="project" values={data?.projects ?? []} params={params} setParams={setParams} />
           <Facet title="License" name="license" values={data?.licenses ?? []} params={params} setParams={setParams} />
           <Facet title="Domain" name="domain" values={data?.domains ?? []} params={params} setParams={setParams} />
           <div className="date-grid">

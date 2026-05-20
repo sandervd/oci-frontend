@@ -42,3 +42,14 @@ def test_choose_latest_uses_semver_when_all_non_latest_are_semver():
     )
 
     assert latest["tag"] == "1.10.0"
+
+
+def test_choose_latest_handles_mixed_naive_and_aware_datetimes():
+    latest = choose_latest(
+        [
+            {"tag": "old", "release_date": summarize("repo", "old", json.loads(Path("tests/fixtures/oci_manifest.json").read_text()))["release_date"].replace(tzinfo=None)},
+            {"tag": "new", "release_date": summarize("repo", "new", json.loads(Path("tests/fixtures/oci_manifest.json").read_text()))["release_date"]},
+        ]
+    )
+
+    assert latest["tag"] == "new"
