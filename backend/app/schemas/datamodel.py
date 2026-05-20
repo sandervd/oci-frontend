@@ -56,5 +56,6 @@ class SearchResponse(BaseModel):
     items: list[DataModelSummary]
     total: int
     projects: list[FacetValue]
+    datasets: list[FacetValue]
     licenses: list[FacetValue]
     domains: list[FacetValue]

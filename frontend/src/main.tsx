@@ -35,6 +35,7 @@ type SearchResponse = {
   items: DataModelSummary[];
   total: number;
   projects: FacetValue[];
+  datasets: FacetValue[];
   licenses: FacetValue[];
   domains: FacetValue[];
 };
@@ -137,7 +138,9 @@ function App() {
   }, [selectedId]);
 
   const activeFilters = useMemo(() => {
-    return ["q", "project", "license", "domain", "released_from", "released_to"].filter((key) => params.has(key)).length;
+    return ["q", "project", "dataset", "license", "domain", "released_from", "released_to"].filter((key) =>
+      params.has(key),
+    ).length;
   }, [params]);
 
   return (
@@ -176,6 +179,7 @@ function App() {
             />
           </label>
           <Facet title="Project" name="project" values={data?.projects ?? []} params={params} setParams={setParams} />
+          <Facet title="Dataset" name="dataset" values={data?.datasets ?? []} params={params} setParams={setParams} />
           <Facet title="License" name="license" values={data?.licenses ?? []} params={params} setParams={setParams} />
           <Facet title="Domain" name="domain" values={data?.domains ?? []} params={params} setParams={setParams} />
           <div className="date-grid">

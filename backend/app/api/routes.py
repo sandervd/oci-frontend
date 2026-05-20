@@ -12,18 +12,21 @@ from app.db.session import get_db
 from app.models.datamodel import DataModel, ModelLayer, ModelVersion, SyncRepositoryState, SyncRun
 from app.schemas.datamodel import DataModelDetail, FacetValue, SearchResponse
 from app.services.harbor_client import HarborClient
+from app.services.metadata import normalize_datetime, parse_multi_value
 from app.services.oci_client import OCIClient
 from app.services.sync import SyncService
 from app.services.sync_lock import sync_lock
 from app.services.sync_state import sync_state
 
 router = APIRouter(prefix="/api")
+DATASET_ANNOTATION = "eu.europa.publications.cellar.dataset"
 
 
 @router.get("/datamodels", response_model=SearchResponse)
 def search_datamodels(
     q: str | None = None,
     project: list[str] = Query(default=[]),
+    dataset: list[str] = Query(default=[]),
     license: list[str] = Query(default=[]),
     domain: list[str] = Query(default=[]),
     released_from: date | None = None,
@@ -47,7 +50,6 @@ def search_datamodels(
     if released_to:
         statement = statement.where(DataModel.updated_at <= datetime.combine(released_to, time.max))
 
-    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     order_by = [DataModel.updated_at.desc().nullslast()]
     if q:
         needle = f"%{q}%"
@@ -55,13 +57,23 @@ def search_datamodels(
             case((DataModel.title.ilike(needle), 0), else_=1),
             DataModel.updated_at.desc().nullslast(),
         ]
-    items = db.scalars(statement.order_by(*order_by).limit(limit).offset(offset)).all()
+    candidates = db.scalars(
+        statement.options(selectinload(DataModel.versions)).order_by(*order_by)
+    ).all()
+    if dataset:
+        selected_datasets = set(dataset)
+        candidates = [
+            item for item in candidates if selected_datasets.intersection(_latest_annotation_values(item, DATASET_ANNOTATION))
+        ]
+    total = len(candidates)
+    items = candidates[offset : offset + limit]
 
-    all_models = db.scalars(select(DataModel)).all()
+    all_models = db.scalars(select(DataModel).options(selectinload(DataModel.versions))).all()
     projects = _facet_counts([_repository_project(item.repository) for item in all_models if _repository_project(item.repository)])
+    datasets = _facet_counts([dataset for item in all_models for dataset in _latest_annotation_values(item, DATASET_ANNOTATION)])
     licenses = _facet_counts([item.license for item in all_models if item.license])
     domains = _facet_counts([domain for item in all_models for domain in item.domains])
-    return SearchResponse(items=items, total=total, projects=projects, licenses=licenses, domains=domains)
+    return SearchResponse(items=items, total=total, projects=projects, datasets=datasets, licenses=licenses, domains=domains)
 
 
 @router.get("/datamodels/{datamodel_id}", response_model=DataModelDetail)
@@ -211,6 +223,27 @@ def _facet_counts(values: list[str]) -> list[FacetValue]:
 
 def _repository_project(repository: str) -> str:
     return repository.split("/", 1)[0]
+
+
+def _latest_annotation_values(datamodel: DataModel, key: str) -> list[str]:
+    latest = _latest_version(datamodel)
+    if latest is None:
+        return []
+    return parse_multi_value(latest.annotations.get(key))
+
+
+def _latest_version(datamodel: DataModel) -> ModelVersion | None:
+    if not datamodel.versions:
+        return None
+    if datamodel.latest_tag:
+        for version in datamodel.versions:
+            if version.tag == datamodel.latest_tag:
+                return version
+    return sorted(
+        datamodel.versions,
+        key=lambda version: normalize_datetime(version.release_date) if version.release_date else datetime.min,
+        reverse=True,
+    )[0]
 
 
 def _auth(settings: Settings) -> tuple[str, str] | None:
